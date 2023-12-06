@@ -7,6 +7,8 @@
 #include <pico/unique_id.h>
 #include <pico/time.h>
 #include "hardware/gpio.h"
+#include "stats.h"
+#include "progress.h"
 
 #if 1
 #define UART_ID uart0
@@ -28,6 +30,124 @@
 #endif
 #undef RECEIVER_VERBOSE
 #undef RECV_STATS
+#if 0
+typedef struct statistic_s {
+    int count;
+    int         recv_max_line_count;
+    int         recv_dots_per_line;
+    int         state;
+    int         recv_line_count;
+    bool        recv_first_char;
+    int         recv_buffer_len;
+    long        recv_total_chars;
+    long        recv_interval_line;
+    uint64_t    recv_interval_total;
+    uint64_t    recv_start_time;
+    uint64_t    recv_end_time;
+
+} statistics_t;
+
+#define STATS_BEGIN_IDLE 1
+#define STATS_INTERLINE_IDLE 2
+#define STATS_LINE 3
+#define STATS_END 4
+
+void stats_state_machine(statistics_t* stats, char ch) {
+    switch(stats->state) {
+        case STATS_BEGIN_IDLE:
+            stats->recv_start_time = to_us_since_boot(get_absolute_time());
+            stats->recv_total_chars++;
+            stats->state = STATS_LINE;
+            break;
+        case STATS_LINE:
+            stats->recv_total_chars++;
+            if(ch == '\n') {
+                stats->recv_line_count++;
+                if(stats->recv_line_count >= stats->recv_max_line_count) {
+                    stats->recv_end_time = to_us_since_boot(get_absolute_time());
+                    stats->state = STATS_END;
+                } else {
+                    stats->state = STATS_INTERLINE_IDLE;
+                }
+            } else {
+                ;
+            }
+            break;
+        case STATS_INTERLINE_IDLE:
+            stats->recv_total_chars++;
+            stats->state = STATS_LINE;
+            break;
+        case STATS_END:
+
+            break;
+    }
+}
+bool stats_is_ended(statistics_t* stats)
+{
+    return stats->state == STATS_END;
+}
+
+statistics_t my_stats;
+void stats_init(statistics_t* stats, int max_line_count, int dots_per_line) {
+    stats->state = STATS_BEGIN_IDLE;
+    stats->count = 0;
+    stats->recv_dots_per_line = dots_per_line;
+    stats->recv_max_line_count = max_line_count;
+    stats->recv_line_count = 0;
+    stats->recv_first_char = true;
+    stats->recv_interval_total = 0;
+    stats->recv_buffer_len = 0;
+    stats->recv_total_chars = 0;
+    stats->recv_interval_line = 0;
+    stats->recv_interval_total = 0;
+
+    stats->recv_start_time = 0;
+    stats->recv_end_time = 0;
+}
+
+// void stats_begin(statistics_t * stats) 
+// {
+//     if(stats->recv_first_char) {
+//         stats->recv_start_time = to_us_since_boot(get_absolute_time());
+//         stats->recv_first_char = false;
+//     }
+// }
+// void stats_begin_line(statistics_t * stats) 
+// {
+//     if(stats->recv_first_char) {
+//         stats->recv_start_time = to_us_since_boot(get_absolute_time());
+//         stats->recv_first_char = false;
+//     }
+// }
+
+// void stats_character(statistics_t* stats, char ch) 
+// {
+
+// }
+
+// void stats_end_line(statistics_t* stats, int line_length, uint64_t time_us_since_boot) 
+// {
+//     stats->recv_total_chars += line_length;   
+// }
+// void stats_end(statistics_t* stats, int line_length, uint64_t time_us_since_boot) 
+// {
+//     stats->recv_end_time = to_us_since_boot(get_absolute_time());
+//     stats->state = STATS_END;
+// }
+void stats_report(statistics_t* stats) {
+    float elapsed = (double)(stats->recv_end_time) - (double)(stats->recv_start_time);
+    printf("Statistics line_count: %d\n", stats->recv_line_count);
+    printf("   Start time                  : %f\n", (float)(stats->recv_start_time));
+    printf("   End time                    : %f\n", (float)(stats->recv_end_time));
+    printf("   Total interval in micro secs: %f\n", elapsed);
+    printf("   Total interval in secs      : %f\n", elapsed / 1000000.0);
+    printf("   Total characters received   : %f\n", (float)(stats->recv_total_chars));
+    printf("   Overall data rate in ch/s   : %f\n", ((float)(stats->recv_total_chars)/(elapsed/1000000.0)));
+    while(1){;}
+}
+#endif
+statistics_t my_stats;
+progress_t my_progress;
 
 int count;
 
@@ -64,6 +184,11 @@ void printf_unique_id(char* buffer, uint8_t* uid, int len)
 
 }
 #undef SENDER_VERBOSE
+
+void stdio_putc(char ch) {
+    printf("%c", ch);
+}
+
 void wait_for_ack(){
     while(1) {
         if(uart_is_readable(UART_ID)) {
@@ -78,6 +203,7 @@ void wait_for_ack(){
         }
     }
 }
+
 void write_string(char* buffer) {
     char* p = buffer;
     while(*p != '\0'){
@@ -96,17 +222,18 @@ void sender(char* uid_buffer)
     int len = sprintf(out_buffer, "From sender count: %d my board_id %s \n", count, uid_buffer);
     out_buffer[len] = '\0';
     write_string(out_buffer);
-
-    #if defined SENDER_VERBOSE || 0
-    printf("Sender msg len: %d count: %d my board_id %s \n", len, count, uid_buffer);
-    sleep_ms(10);
-    #else
-    printf(".");
-    if(count % 30 == 0) {
-        printf("\n");
-    }
-    #endif
+    progress_update(&my_progress);
+    // #if defined SENDER_VERBOSE || 0
+    // printf("Sender msg len: %d count: %d my board_id %s \n", len, count, uid_buffer);
+    // sleep_ms(10);
+    // #else
+    // printf(".");
+    // if(count % 30 == 0) {
+    //     printf("\n");
+    // }
+    // #endif
 }
+#if 0
 void receiver(char* uid_buffer)
 {
     send_ack();
@@ -125,6 +252,7 @@ void receiver(char* uid_buffer)
                 if(ch == '\n') {
                     recv_line_count++;
                     #if defined  RECV_STATS || 1
+                    
                     recv_buffer_len = in_buffer_len+1;
                     recv_total_chars = recv_total_chars + in_buffer_len+1;
                     // printf("get_absolute_time\n");
@@ -183,6 +311,30 @@ void receiver(char* uid_buffer)
         }
     }
 }
+#endif
+void receive_line(char* uid_buffer)
+{
+    in_buffer_len = 0;
+    while(1) {
+        while(uart_is_readable(UART_ID)) {
+            char ch = uart_getc(UART_ID);
+            in_buffer[in_buffer_len] = ch;
+            in_buffer_len++;
+            stats_state_machine(&my_stats, ch);
+            // printf("got a character %d\n", (int)ch);
+            if(ch == '\n') {
+                in_buffer[in_buffer_len] = '\0';
+                progress_update(&my_progress);
+                // #if defined RECV_VERBOSE
+                // printf("line recv'd: [%s]\n", in_buffer);
+                // #else
+                // printf("%s", ((my_stats.recv_line_count %my_stats.recv_dots_per_line)==0)?".\n": ".");
+                // #endif
+                return;
+            }
+        }
+    }
+}
 int main()
 {
     count = 0;
@@ -199,6 +351,9 @@ int main()
     pico_get_unique_board_id_string(uid_buffer, BUFFER_MAX_LENGTH);
     iam_sender = (strcmp(uid_buffer, "E6614104036E8D32") == 0);
     printf("uid_buffer is : [%s] iam_%s \n", uid_buffer, (iam_sender)? " sender ": " receiver ");
+    
+    stats_init(&my_stats, 5000);
+    progress_init(&my_progress, stdio_putc, 100);
     sleep_ms(5000);
     printf("after sleep uid_buffer is : [%s] iam_sender: %d \n", uid_buffer, iam_sender);
     while(1) {
@@ -208,14 +363,15 @@ int main()
         #else
         if(iam_sender) {
             wait_for_ack();
-            // printf("I am sender count: %d uid: %s\n", count, uid_buffer);
-            // sleep_ms(5);
             sender(uid_buffer);
         } else {
-            // printf("I am receiver count: %duid: %s\n", count, uid_buffer);
-            // sleep_ms(500);
-            receiver(uid_buffer);
+            send_ack();
+            receive_line(uid_buffer);
+            if(stats_is_ended(&my_stats)) {
+                break;
+            }
         }
         #endif
     }
+    stats_report(&my_stats);
 }

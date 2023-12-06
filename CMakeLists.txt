@@ -46,7 +46,11 @@ pico_sdk_init()
 
 # add_subdirectory(src)
 set(TARGET pico_uart_example)
-add_executable(${TARGET} src/main.c)
+add_executable(${TARGET} 
+    src/main.c 
+    src/stats.h src/stats.c
+    src/progress.h src/progress.c 
+    )
 pico_enable_stdio_usb(${TARGET} 1)
 pico_enable_stdio_uart(${TARGET} 0)
 pico_add_extra_outputs(${TARGET})
