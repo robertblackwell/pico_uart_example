@@ -1,6 +1,6 @@
 # Pico Uart Example
 
-This projectconnects two raspberrypi pico board by their uart ports and transfers data between them.
+This project connects two raspberrypi pico board by their uart ports and transfers data between them.
 
 The goal is to get a measurement of the data throughput.
 
